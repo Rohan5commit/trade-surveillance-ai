@@ -1,0 +1,15 @@
+# Optional advanced models and heavy dependencies
+xgboost==2.1.2
+lightgbm==4.5.0
+torch==2.5.1
+tensorflow==2.18.0
+stumpy==1.13.0
+hmmlearn==0.3.2
+python-igraph==0.11.8
+spacy==3.8.2
+transformers==4.46.2
+sentence-transformers==3.2.0
+shap==0.46.0
+lime==0.2.0.1
+mlflow==2.18.0
+quickfix==1.16.0

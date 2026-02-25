@@ -1,0 +1,16 @@
+spoofing:
+  large_order_multiple: 5
+  cancel_window_seconds: 10
+  opposite_fill_window_seconds: 10
+
+quote_stuffing:
+  max_orders_per_second: 100
+  cancel_ratio_threshold: 0.95
+
+marking_the_close:
+  close_window_minutes: 10
+  abnormal_volume_pct: 0.1
+  price_impact_threshold: 0.02
+
+alerts:
+  hybrid_threshold: 0.7
