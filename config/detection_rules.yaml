@@ -2,15 +2,28 @@ spoofing:
   large_order_multiple: 5
   cancel_window_seconds: 10
   opposite_fill_window_seconds: 10
+  layering_orders_per_minute: 5
 
 quote_stuffing:
   max_orders_per_second: 100
   cancel_ratio_threshold: 0.95
+  latency_impact_ms_threshold: 5
 
 marking_the_close:
   close_window_minutes: 10
   abnormal_volume_pct: 0.1
   price_impact_threshold: 0.02
+
+cross_market:
+  enable: true
+  related_instruments:
+    SPY: [ES, SPX]
+    ES: [SPY, SPX]
+    SPX: [SPY, ES]
+
+options_equity:
+  gamma_pressure_threshold: 0.8
+  strike_distance_pct_threshold: 0.005
 
 alerts:
   hybrid_threshold: 0.7

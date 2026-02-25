@@ -1,0 +1,47 @@
+[
+  {
+    "event_id": "sim-1",
+    "ts": "2026-02-25T12:00:00Z",
+    "venue": "SIM",
+    "asset_class": "equity",
+    "symbol": "AAPL",
+    "account_id": "acct-1",
+    "side": "BUY",
+    "event_type": "new_order",
+    "order_id": "ord-1",
+    "quantity": 1000,
+    "price": 190.0,
+    "order_type": "LIMIT",
+    "metadata": {}
+  },
+  {
+    "event_id": "sim-2",
+    "ts": "2026-02-25T12:00:05Z",
+    "venue": "SIM",
+    "asset_class": "equity",
+    "symbol": "AAPL",
+    "account_id": "acct-1",
+    "side": "SELL",
+    "event_type": "fill",
+    "order_id": "fill-1",
+    "quantity": 100,
+    "price": 190.1,
+    "order_type": "MARKET",
+    "metadata": {}
+  },
+  {
+    "event_id": "sim-3",
+    "ts": "2026-02-25T12:00:06Z",
+    "venue": "SIM",
+    "asset_class": "equity",
+    "symbol": "AAPL",
+    "account_id": "acct-1",
+    "side": "BUY",
+    "event_type": "cancel",
+    "order_id": "ord-1",
+    "quantity": 1000,
+    "price": 190.0,
+    "order_type": "LIMIT",
+    "metadata": {}
+  }
+]

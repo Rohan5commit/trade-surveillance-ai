@@ -1,127 +1,85 @@
-# Intelligent Trade Surveillance & Market Abuse Detection (Free/GitHub-First Scaffold)
+# Intelligent Trade Surveillance & Market Abuse Detection
 
-This repository is a complete starter implementation for a hybrid surveillance platform covering:
-- rules-based detection (spoofing, wash trading, quote stuffing, marking the close)
-- unsupervised anomaly detection (Isolation Forest + DBSCAN + One-Class SVM)
-- hybrid scoring and alert prioritization
-- entity linkage graph scaffolding
-- API + WebSocket alert stream
-- CI/CD via GitHub Actions
+Enterprise-grade, GitHub-first implementation of a hybrid surveillance stack for equities, derivatives, crypto, and FX.
 
-## API Endpoints (implemented)
-- `POST /events`: ingest normalized trade/order events
-- `GET /alerts`: list deduplicated alerts
-- `POST /cases`: open an investigation case
-- `GET /cases`: list recent cases
-- `GET /reports/sar/{case_id}`: generate SAR markdown draft
-- `GET /health`: service liveness
-- `GET /metrics`: Prometheus metrics
-- `WS /ws/alerts`: real-time alert stream
+## Implemented Capability Coverage
+- Rules engine: spoofing, layering/quote stuffing, wash trade + cycle rings, marking-the-close, pump-and-dump, pre-announcement trading, cross-asset spoofing, options-equity pinning.
+- ML detection:
+  - Unsupervised: Isolation Forest, DBSCAN, One-Class SVM.
+  - Supervised pipeline: SVM + SMOTE training with evaluation and model registry.
+  - Optional templates: XGBoost, TCN, GNN.
+- Entity relationship graph: Neo4j + networkx fallback.
+- Alerting and triage: severity scoring, deduplication, queue prioritization.
+- Investigation workflows: case management, evidence aggregation, prior-alert linkage.
+- Reporting: SAR markdown export + MAR XML export.
+- Audit: hash-chained immutable activity log verification endpoint.
+- Streaming/deployment: Kafka worker + production-oriented PyFlink job template + Kubernetes manifests + CI/CD + scheduled retraining/drift workflows.
 
-## Why this is "free" and "no local storage" friendly
-- Code and builds run from GitHub Actions.
-- Runtime can be fully stateless when you provide remote services in `.env`.
-- Local Docker stack is ephemeral (`tmpfs` for DB/graph in compose) for test/dev only.
-
-## Project Structure
-
-```text
-trade-surveillance-ai/
-├── src/
-│   ├── ingestion/
-│   ├── preprocessing/
-│   ├── detection/
-│   │   ├── rules/
-│   │   ├── ml/
-│   │   └── hybrid/
-│   ├── entity_resolution/
-│   ├── alerting/
-│   ├── investigation/
-│   ├── reporting/
-│   └── api/
-├── models/
-├── config/
-├── tests/
-├── data/
-├── dashboards/
-├── docs/
-└── scripts/
-```
+## API Endpoints
+- `POST /events`
+- `GET /alerts`
+- `GET /alerts/{alert_id}/priority`
+- `POST /cases`
+- `GET /cases`
+- `GET /cases/{case_id}/evidence`
+- `GET /reports/sar/{case_id}`
+- `GET /reports/mar/{case_id}`
+- `GET /audit/verify`
+- `POST /graphql` (optional, enabled when `strawberry-graphql` is installed)
+- `GET /health`
+- `GET /metrics`
+- `WS /ws/alerts`
 
 ## Quick Start
 
-1. Create environment file:
+1. Configure environment:
 ```bash
 cp .env.example .env
 ```
 
-2. Start services:
+2. Start stack:
 ```bash
 docker compose up --build
 ```
 
-3. Health check:
+Frontend dashboard runs at `http://localhost:5173`.
+
+3. Verify:
 ```bash
 curl http://localhost:8000/health
 ```
 
-4. Ingest a sample event:
+4. Run tests:
 ```bash
-curl -X POST http://localhost:8000/events \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "event_id":"evt-1",
-    "ts":"2026-02-25T12:00:00Z",
-    "venue":"NASDAQ",
-    "asset_class":"equity",
-    "symbol":"AAPL.US",
-    "account_id":"acct-1",
-    "side":"BUY",
-    "event_type":"new_order",
-    "order_id":"ord-1",
-    "quantity":100,
-    "price":190.2,
-    "order_type":"LIMIT",
-    "metadata":{}
-  }'
+python3 -m pytest
 ```
 
-5. Run tests:
+## Core Operations
+
 ```bash
-pytest
+make test
+make lint
+make backtest
+make drift
+make retrain
 ```
 
-## GitHub-Only Build Flow
+## Deployment
+- Kubernetes manifests: `k8s/base/`
+- GitHub workflows:
+  - `.github/workflows/ci.yml`
+  - `.github/workflows/docker-publish.yml`
+  - `.github/workflows/retrain.yml`
+  - `.github/workflows/drift-monitor.yml`
+  - `.github/workflows/load-test.yml`
 
-1. Create a new GitHub repository.
-2. Push this project:
-```bash
-git remote add origin <your-repo-url>
-git branch -M main
-git add .
-git commit -m "Initial trade surveillance scaffold"
-git push -u origin main
-```
-3. CI will automatically run tests and build image.
-4. Use the `Docker Publish` workflow to push image to GHCR for deployment.
+## Free-Tier Friendly Infrastructure
+- Aiven PostgreSQL free
+- Aiven Valkey free
+- Aiven Kafka free
+- Neo4j Aura Free
 
-Checklist implementation status is tracked in `docs/CHECKLIST_STATUS.md`.
+Runtime is designed to be stateless with remote backing services only.
 
-## Minimal Free-Tier Production Setup
-
-Use remote providers and set these env vars in your deploy target:
-- `POSTGRES_URL` -> Neon
-- `REDIS_URL` -> Upstash Redis
-- `NEO4J_URI/USER/PASSWORD` -> Neo4j Aura Free
-- `KAFKA_BOOTSTRAP_SERVERS` -> managed Kafka-compatible endpoint
-
-## What is implemented now vs next
-
-Implemented:
-- real API, rule engine, unsupervised ML scoring path, metrics endpoint, test suite, CI workflows.
-
-Next recommended additions:
-- supervised models (SVM/XGBoost/TCN) training pipelines
-- full Flink streaming job deployment
-- communication surveillance ingestion (email/chat/voice)
-- SAR/MAR filing adapters with regulator-specific schemas
+## Status
+Detailed phase-by-phase completion is tracked in `docs/CHECKLIST_STATUS.md`.

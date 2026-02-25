@@ -7,6 +7,8 @@ from statistics import mean
 import uuid
 
 from src.common.schemas import Alert, MarketEvent
+from src.detection.rules.cross_market import CrossMarketDetector
+from src.detection.rules.wash_graph import WashTradeGraphDetector
 
 
 @dataclass
@@ -28,6 +30,8 @@ class RuleEngine:
         self.last_prices: dict[str, deque[tuple[datetime, float]]] = defaultdict(lambda: deque(maxlen=2_000))
         self.account_symbol_side_volume: dict[tuple[str, str, str], float] = defaultdict(float)
         self.account_symbol_total_volume: dict[tuple[str, str], deque[float]] = defaultdict(lambda: deque(maxlen=250))
+        self.cross_market_detector = CrossMarketDetector()
+        self.wash_graph_detector = WashTradeGraphDetector()
 
     def process(self, event: MarketEvent) -> list[Alert]:
         alerts: list[Alert] = []
@@ -55,15 +59,19 @@ class RuleEngine:
             self.last_prices[event.symbol].append((event.ts, event.price))
             self.account_symbol_side_volume[(event.account_id, event.symbol, event.side)] += event.quantity
             self.account_symbol_total_volume[(event.account_id, event.symbol)].append(event.quantity)
+            self.wash_graph_detector.ingest_trade(event)
             alerts.extend(self._detect_wash_trade(event))
+            alerts.extend(self._detect_wash_ring(event))
 
         if event.event_type == "cancel" and event.order_id:
             alerts.extend(self._detect_spoofing(event))
 
         alerts.extend(self._detect_quote_stuffing(event))
+        alerts.extend(self._detect_layering(event))
         alerts.extend(self._detect_marking_the_close(event))
         alerts.extend(self._detect_pump_and_dump(event))
         alerts.extend(self._detect_pre_announcement_trading(event))
+        alerts.extend(self.cross_market_detector.process(event))
         return alerts
 
     def _detect_spoofing(self, cancel_event: MarketEvent) -> list[Alert]:
@@ -131,6 +139,26 @@ class RuleEngine:
 
         return []
 
+    def _detect_wash_ring(self, trade_event: MarketEvent) -> list[Alert]:
+        cycles = self.wash_graph_detector.suspicious_cycles(min_cycle_len=3, max_cycle_len=6)
+        for cycle in cycles:
+            if trade_event.account_id in cycle:
+                return [
+                    Alert(
+                        alert_id=str(uuid.uuid4()),
+                        ts=trade_event.ts,
+                        detector="rules",
+                        pattern="insider_ring_or_wash_cycle",
+                        account_id=trade_event.account_id,
+                        symbol=trade_event.symbol,
+                        severity="high",
+                        score=0.84,
+                        reason="Account participates in a circular trading network.",
+                        evidence={"cycle_len": len(cycle), "cycle": "->".join(cycle)},
+                    )
+                ]
+        return []
+
     def _detect_quote_stuffing(self, event: MarketEvent) -> list[Alert]:
         actions = self.recent_actions[event.account_id]
         one_sec_ago = event.ts - timedelta(seconds=1)
@@ -142,6 +170,7 @@ class RuleEngine:
         ratio = cancels / len(recent) if recent else 0
 
         if per_second > 100 and ratio > 0.95:
+            latency_impact_ms = float(event.metadata.get("latency_impact_ms", 0.0))
             return [
                 Alert(
                     alert_id=str(uuid.uuid4()),
@@ -153,7 +182,40 @@ class RuleEngine:
                     severity="high",
                     score=0.9,
                     reason="Sustained very high order/cancel rate with extreme cancellation ratio.",
-                    evidence={"orders_per_second": per_second, "cancel_ratio_5s": round(ratio, 3)},
+                    evidence={
+                        "orders_per_second": per_second,
+                        "cancel_ratio_5s": round(ratio, 3),
+                        "latency_impact_ms": round(latency_impact_ms, 3),
+                    },
+                )
+            ]
+        return []
+
+    def _detect_layering(self, event: MarketEvent) -> list[Alert]:
+        actions = self.recent_actions[event.account_id]
+        window = event.ts - timedelta(seconds=60)
+        orders = [e for e in actions if e.ts >= window and e.event_type == "new_order" and e.side == event.side and e.symbol == event.symbol]
+        cancels = [e for e in actions if e.ts >= window and e.event_type == "cancel" and e.side == event.side and e.symbol == event.symbol]
+
+        if len(orders) < 5:
+            return []
+        prices = sorted({round(o.price, 4) for o in orders})
+        if len(prices) < 3:
+            return []
+        cancel_ratio = len(cancels) / max(len(orders), 1)
+        if cancel_ratio > 0.8:
+            return [
+                Alert(
+                    alert_id=str(uuid.uuid4()),
+                    ts=event.ts,
+                    detector="rules",
+                    pattern="layering",
+                    account_id=event.account_id,
+                    symbol=event.symbol,
+                    severity="high",
+                    score=0.87,
+                    reason="Multiple same-side laddered orders followed by heavy cancellations.",
+                    evidence={"orders_60s": len(orders), "price_levels": len(prices), "cancel_ratio_60s": round(cancel_ratio, 3)},
                 )
             ]
         return []

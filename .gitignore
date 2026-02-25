@@ -16,3 +16,6 @@ htmlcov/
 models/*.joblib
 build/
 dist/
+config/certs/
+frontend/node_modules/
+frontend/dist/

@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     neo4j_user: str = Field(default="", alias="NEO4J_USER")
     neo4j_password: str = Field(default="", alias="NEO4J_PASSWORD")
     kafka_bootstrap_servers: str = Field(default="", alias="KAFKA_BOOTSTRAP_SERVERS")
+    kafka_security_protocol: str = Field(default="", alias="KAFKA_SECURITY_PROTOCOL")
+    kafka_ssl_keyfile: str = Field(default="", alias="KAFKA_SSL_KEYFILE")
+    kafka_ssl_certfile: str = Field(default="", alias="KAFKA_SSL_CERTFILE")
+    kafka_ssl_cafile: str = Field(default="", alias="KAFKA_SSL_CAFILE")
+    mlflow_tracking_uri: str = Field(default="", alias="MLFLOW_TRACKING_URI")
+    drift_psi_threshold: float = Field(default=0.25, alias="DRIFT_PSI_THRESHOLD")
+    retrain_dataset_path: str = Field(default="", alias="RETRAIN_DATASET_PATH")
 
     sentry_dsn: str = Field(default="", alias="SENTRY_DSN")
 

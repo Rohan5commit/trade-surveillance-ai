@@ -16,3 +16,19 @@
 - Weekly: sample 100 alerts and label TP/FP.
 - Monthly: retrain unsupervised baselines + supervised models.
 - Quarterly: full validation and threshold calibration.
+
+## Scheduled Jobs
+- Retraining workflow: `.github/workflows/retrain.yml`.
+- Drift workflow: `.github/workflows/drift-monitor.yml`.
+- Load test workflow: `.github/workflows/load-test.yml`.
+
+## Kubernetes Deployment
+1. Create namespace and config:
+   - `kubectl apply -f k8s/base/namespace.yaml`
+   - `kubectl apply -f k8s/base/configmap.yaml`
+2. Create secrets from `k8s/base/secrets.example.yaml` with real values.
+3. Deploy API/worker:
+   - `kubectl apply -f k8s/base/api-deployment.yaml`
+   - `kubectl apply -f k8s/base/worker-deployment.yaml`
+   - `kubectl apply -f k8s/base/api-service.yaml`
+   - `kubectl apply -f k8s/base/api-hpa.yaml`

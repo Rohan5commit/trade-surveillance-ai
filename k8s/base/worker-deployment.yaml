@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: surveillance-worker
+  namespace: trade-surveillance
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: surveillance-worker
+  template:
+    metadata:
+      labels:
+        app: surveillance-worker
+    spec:
+      containers:
+      - name: worker
+        image: ghcr.io/rohan5commit/trade-surveillance-ai:latest
+        command: ["python", "-m", "src.ingestion.stream_worker"]
+        envFrom:
+        - configMapRef:
+            name: surveillance-config
+        - secretRef:
+            name: surveillance-secrets
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "2"
+            memory: "2Gi"

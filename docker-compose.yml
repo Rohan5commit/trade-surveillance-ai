@@ -22,6 +22,36 @@ services:
       - neo4j
       - redpanda
 
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    environment:
+      VITE_API_URL: http://localhost:8000
+      VITE_WS_URL: ws://localhost:8000/ws/alerts
+    volumes:
+      - ./frontend:/app
+    command: ["sh", "-c", "npm install && npm run dev -- --host 0.0.0.0 --port 5173"]
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+
+  worker:
+    build: .
+    env_file:
+      - .env
+    environment:
+      SURVEILLANCE_API_URL: http://api:8000
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      KAFKA_SECURITY_PROTOCOL:
+      KAFKA_SSL_KEYFILE:
+      KAFKA_SSL_CERTFILE:
+      KAFKA_SSL_CAFILE:
+    command: ["python", "-m", "src.ingestion.stream_worker"]
+    depends_on:
+      - api
+      - redpanda
+
   postgres:
     image: postgres:16
     environment:
@@ -73,6 +103,10 @@ services:
     image: grafana/grafana:latest
     environment:
       GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./dashboards/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./dashboards/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./dashboards/grafana/trade-surveillance-dashboard.json:/var/lib/grafana/dashboards/trade-surveillance-dashboard.json:ro
     ports:
       - "3000:3000"
     depends_on:

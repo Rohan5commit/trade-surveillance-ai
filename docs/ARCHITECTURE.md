@@ -10,6 +10,8 @@
 - Entity resolution graph for account/account-owner linkage.
 - Alert management and case lifecycle.
 - API + WebSocket for investigation tools.
+- Stream worker: Kafka consumer that pushes events into detection API.
+- Reporting layer: SAR markdown + MAR XML + immutable audit log chain.
 
 ## Stateless Runtime Principle
 Production runtime is designed to be stateless:
@@ -18,6 +20,10 @@ Production runtime is designed to be stateless:
 - Use remote Neo4j for relationship graph.
 - Use managed Kafka-compatible broker for streams.
 - Do not depend on local container volumes for persistence.
+
+## Deployment Artifacts
+- Kubernetes manifests under `k8s/base/` for API, worker, service, HPA, and network policy.
+- GitHub workflows for CI, container publish, retraining, drift checks, and load tests.
 
 ## Recommended Free-Tier Backing Services
 - PostgreSQL: Neon free plan.

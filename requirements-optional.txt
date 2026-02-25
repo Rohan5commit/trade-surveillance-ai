@@ -13,3 +13,7 @@ shap==0.46.0
 lime==0.2.0.1
 mlflow==2.18.0
 quickfix==1.16.0
+apache-flink==1.19.0
+locust==2.32.2
+torch-geometric==2.6.1
+strawberry-graphql[fastapi]==0.246.1

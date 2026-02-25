@@ -1,0 +1,41 @@
+{
+  "title": "Trade Surveillance",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Events Ingested",
+      "targets": [
+        {
+          "expr": "sum(rate(events_ingested_total[1m]))",
+          "legendFormat": "events/sec"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "Alerts Generated",
+      "targets": [
+        {
+          "expr": "sum(rate(alerts_generated_total[1m]))",
+          "legendFormat": "alerts/sec"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "Ingest Latency p95",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(ingest_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8}
+    }
+  ]
+}

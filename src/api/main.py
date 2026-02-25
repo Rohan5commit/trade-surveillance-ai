@@ -12,14 +12,19 @@ from prometheus_client import Counter, Histogram, generate_latest
 from starlette.responses import PlainTextResponse
 
 from src.alerting.service import AlertService
+from src.api.graphql_schema import build_graphql_router
 from src.common.schemas import Alert, CaseCreateRequest, CaseResponse, IngestResponse, MarketEvent
 from src.config.settings import settings
 from src.detection.hybrid.scorer import combine_scores
 from src.detection.ml.features import extract_session_features
 from src.detection.ml.models import UnsupervisedEnsemble
 from src.detection.rules.engine import RuleEngine
+from src.investigation.evidence import collect_related_trades, link_prior_alerts, summarize_evidence
+from src.investigation.queue import prioritize_alert
 from src.investigation.case_manager import CaseManager
 from src.preprocessing.normalizer import normalize_event
+from src.reporting.audit import AuditTrail
+from src.reporting.mar import MarPayload, render_mar_xml
 from src.reporting.sar import SarPayload, render_sar_markdown
 
 app = FastAPI(title="Intelligent Trade Surveillance API", version="0.1.0")
@@ -33,8 +38,10 @@ alert_service = AlertService()
 ml_ensemble = UnsupervisedEnsemble(contamination=0.01)
 case_manager = CaseManager(settings.postgres_url or "sqlite+pysqlite:///:memory:")
 case_manager.init_schema()
+audit_trail = AuditTrail()
 
 recent_events_by_account: dict[str, deque[MarketEvent]] = defaultdict(lambda: deque(maxlen=500))
+all_events: deque[MarketEvent] = deque(maxlen=200_000)
 
 
 class ConnectionManager:
@@ -63,6 +70,9 @@ class ConnectionManager:
 
 
 ws_manager = ConnectionManager()
+graphql_router = build_graphql_router(alert_service, case_manager)
+if graphql_router is not None:
+    app.include_router(graphql_router, prefix="/graphql")
 
 
 @app.on_event("startup")
@@ -85,6 +95,7 @@ async def ingest_event(event: MarketEvent) -> IngestResponse:
     with INGEST_LATENCY.time():
         normalized = normalize_event(event)
         EVENTS_INGESTED.inc()
+        all_events.append(normalized)
 
         recent_events_by_account[normalized.account_id].append(normalized)
 
@@ -129,6 +140,12 @@ async def ingest_event(event: MarketEvent) -> IngestResponse:
         if accepted:
             ALERTS_GENERATED.inc(len(accepted))
             await ws_manager.broadcast_alerts(accepted)
+            for alert in accepted:
+                audit_trail.append(
+                    actor="surveillance-engine",
+                    action="alert_generated",
+                    payload={"alert_id": alert.alert_id, "pattern": alert.pattern, "score": alert.score},
+                )
 
         return IngestResponse(
             accepted=True,
@@ -174,6 +191,11 @@ def create_case(payload: CaseCreateRequest) -> CaseResponse:
         severity=payload.severity,
         summary=payload.summary,
     )
+    audit_trail.append(
+        actor="investigator-api",
+        action="case_created",
+        payload={"case_id": case.id, "alert_id": case.alert_id, "severity": case.severity},
+    )
     return _case_response(case)
 
 
@@ -201,3 +223,68 @@ def generate_sar(case_id: int) -> PlainTextResponse:
         )
     )
     return PlainTextResponse(report, media_type="text/markdown")
+
+
+@app.get("/reports/mar/{case_id}")
+def generate_mar(case_id: int) -> PlainTextResponse:
+    cases = {c.id: c for c in case_manager.list_cases(limit=1000)}
+    case = cases.get(case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="case not found")
+
+    xml = render_mar_xml(
+        MarPayload(
+            case_id=case.id,
+            issuer=case.symbol,
+            instrument=case.symbol,
+            suspect=case.account_id,
+            narrative=case.summary,
+            detected_at=case.created_at,
+        )
+    )
+    return PlainTextResponse(xml, media_type="application/xml")
+
+
+@app.get("/cases/{case_id}/evidence")
+def case_evidence(case_id: int) -> JSONResponse:
+    cases = {c.id: c for c in case_manager.list_cases(limit=1000)}
+    case = cases.get(case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="case not found")
+
+    pivot_ts = case.created_at
+    events = collect_related_trades(list(all_events), case.account_id, case.symbol, pivot_ts, days=3)
+    prior = link_prior_alerts(alert_service.list_alerts(limit=5000), case.account_id, case.symbol)
+    summary = summarize_evidence(
+        Alert(
+            alert_id=case.alert_id,
+            ts=case.created_at,
+            detector="case",
+            pattern="case",
+            account_id=case.account_id,
+            symbol=case.symbol,
+            severity=case.severity,
+            score=0.5,
+            reason=case.summary,
+            evidence={},
+        ),
+        events,
+        prior,
+    )
+    return JSONResponse({"case_id": case_id, "summary": summary, "sample_events": [e.model_dump(mode="json") for e in events[:10]]})
+
+
+@app.get("/alerts/{alert_id}/priority")
+def alert_priority(alert_id: str) -> JSONResponse:
+    alerts = {a.alert_id: a for a in alert_service.list_alerts(limit=5000)}
+    alert = alerts.get(alert_id)
+    if not alert:
+        raise HTTPException(status_code=404, detail="alert not found")
+
+    priority = prioritize_alert(alert, regulatory_deadline_days=30, account_risk_tier=3, age_minutes=10)
+    return JSONResponse({"alert_id": alert_id, "priority_score": priority.score})
+
+
+@app.get("/audit/verify")
+def audit_verify() -> JSONResponse:
+    return JSONResponse({"valid": audit_trail.verify_chain(), "records": len(audit_trail.records)})

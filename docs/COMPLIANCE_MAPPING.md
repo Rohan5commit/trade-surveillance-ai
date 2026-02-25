@@ -8,8 +8,12 @@
 ## EU (MiFID II / MAR)
 - Quote-to-trade ratio monitor implemented in quote-stuffing rule.
 - Case and alert retention policy configurable for 5+ years in remote DB lifecycle settings.
-- MAR report export path provided in reporting module scaffold.
+- MAR report export implemented via `GET /reports/mar/{case_id}` using XML payload generator.
 
 ## Explainability
 - Rule alerts include deterministic evidence fields.
 - ML alerts include component scores and can be extended with SHAP/LIME in `requirements-optional.txt`.
+
+## Auditability
+- Hash-chained audit records implemented in `src/reporting/audit.py`.
+- Runtime verification endpoint: `GET /audit/verify`.
