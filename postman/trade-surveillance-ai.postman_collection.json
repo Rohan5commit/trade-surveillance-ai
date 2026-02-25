@@ -1,0 +1,422 @@
+{
+  "info": {
+    "_postman_id": "8dbdef3c-a2f4-4f6b-89d2-59ce7a2142af",
+    "name": "Trade Surveillance AI",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Evaluation collection for auth, ingestion, alerts, cases, reporting, and audit endpoints."
+  },
+  "item": [
+    {
+      "name": "Auth - Register",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"institution-a@example.com\",\n  \"password\": \"EvalPass!12345\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/register",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "register"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Auth - Token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.access_token) { pm.collectionVariables.set('bearerToken', json.access_token); }"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"institution-a@example.com\",\n  \"password\": \"EvalPass!12345\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/token",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "token"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Auth - Create API Key",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.api_key) { pm.collectionVariables.set('apiKey', json.api_key); }"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bearerToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"institution-a\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/api-keys",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "api-keys"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Auth - List API Keys",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bearerToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/auth/api-keys",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "api-keys"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Events - Ingest",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "x-api-key",
+            "value": "{{apiKey}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"event_id\": \"evt-postman-1\",\n  \"ts\": \"2026-02-25T12:00:00Z\",\n  \"venue\": \"SIM\",\n  \"asset_class\": \"equity\",\n  \"symbol\": \"AAPL\",\n  \"account_id\": \"acct-postman-1\",\n  \"side\": \"BUY\",\n  \"event_type\": \"new_order\",\n  \"order_id\": \"ord-postman-1\",\n  \"quantity\": 100,\n  \"price\": 190.0,\n  \"order_type\": \"LIMIT\",\n  \"metadata\": {}\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/events",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "events"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Alerts - List",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-api-key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/alerts?limit=100",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "alerts"
+          ],
+          "query": [
+            {
+              "key": "limit",
+              "value": "100"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Alerts - Priority",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-api-key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/alerts/{{alertId}}/priority",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "alerts",
+            "{{alertId}}",
+            "priority"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Cases - Create",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.id) { pm.collectionVariables.set('caseId', json.id); }"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "x-api-key",
+            "value": "{{apiKey}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"alert_id\": \"postman-alert-1\",\n  \"account_id\": \"acct-postman-1\",\n  \"symbol\": \"AAPL\",\n  \"severity\": \"high\",\n  \"summary\": \"Manual case from Postman\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/cases",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cases"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Cases - List",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-api-key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cases?limit=100",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cases"
+          ],
+          "query": [
+            {
+              "key": "limit",
+              "value": "100"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Cases - Evidence",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-api-key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cases/{{caseId}}/evidence",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cases",
+            "{{caseId}}",
+            "evidence"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Reports - SAR",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-api-key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/reports/sar/{{caseId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "reports",
+            "sar",
+            "{{caseId}}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Reports - MAR",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-api-key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/reports/mar/{{caseId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "reports",
+            "mar",
+            "{{caseId}}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Audit - Verify",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/audit/verify",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "audit",
+            "verify"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Metrics",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/metrics",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "metrics"
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "bearerToken",
+      "value": ""
+    },
+    {
+      "key": "apiKey",
+      "value": ""
+    },
+    {
+      "key": "alertId",
+      "value": "replace-with-alert-id"
+    },
+    {
+      "key": "caseId",
+      "value": "1"
+    }
+  ]
+}

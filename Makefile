@@ -1,4 +1,4 @@
-.PHONY: install test run up down lint backtest retrain drift load k8s-apply
+.PHONY: install test run up down demo demo-down demo-seed lint backtest retrain drift load k8s-apply
 
 install:
 	python3 -m pip install -r requirements.txt
@@ -15,11 +15,22 @@ up:
 down:
 	docker compose down
 
+demo:
+	docker compose -f docker-compose.demo.yml up --build -d api frontend postgres redis redpanda neo4j
+	docker compose -f docker-compose.demo.yml run --rm demo-seed
+	@echo "Demo running: API=http://localhost:8000 Frontend=http://localhost:5173"
+
+demo-seed:
+	docker compose -f docker-compose.demo.yml run --rm demo-seed
+
+demo-down:
+	docker compose -f docker-compose.demo.yml down --remove-orphans
+
 lint:
 	python3 -m compileall src
 
 backtest:
-	python3 scripts/backtest_replay.py --input data/sample_events.json --api-url http://localhost:8000 --speed 5
+	python3 scripts/backtest_replay.py --input data/sample_events.json --api-url http://localhost:8000 --speed 5 --bootstrap-auth
 
 retrain:
 	python3 scripts/retrain.py --dataset data/labeled_sample.csv --model-name svm_market_abuse

@@ -1,21 +1,96 @@
 # Intelligent Trade Surveillance & Market Abuse Detection
 
-Enterprise-grade, GitHub-first implementation of a hybrid surveillance stack for equities, derivatives, crypto, and FX.
+**Beta / evaluation only - not certified for regulatory compliance use.**
 
-## Implemented Capability Coverage
-- Rules engine: spoofing, layering/quote stuffing, wash trade + cycle rings, marking-the-close, pump-and-dump, pre-announcement trading, cross-asset spoofing, options-equity pinning.
-- ML detection:
-  - Unsupervised: Isolation Forest, DBSCAN, One-Class SVM.
-  - Supervised pipeline: SVM + SMOTE training with evaluation and model registry.
-  - Optional templates: XGBoost, TCN, GNN.
-- Entity relationship graph: Neo4j + networkx fallback.
-- Alerting and triage: severity scoring, deduplication, queue prioritization.
-- Investigation workflows: case management, evidence aggregation, prior-alert linkage.
-- Reporting: SAR markdown export + MAR XML export.
-- Audit: hash-chained immutable activity log verification endpoint.
-- Streaming/deployment: Kafka worker + production-oriented PyFlink job template + Kubernetes manifests + CI/CD + scheduled retraining/drift workflows.
+AI-assisted surveillance platform for spoofing, layering, wash trading, quote stuffing, pump-and-dump, pre-announcement trading, cross-asset spoofing, and options-equity manipulation.
 
-## API Endpoints
+## What Evaluators Get
+- Real-time API + WebSocket alert feed.
+- Hybrid detection stack: rules + unsupervised ML ensemble.
+- Tenant isolation with JWT auth + API keys.
+- Investigation workflow: cases, evidence, prioritization.
+- Reporting exports: SAR markdown and MAR XML.
+- Audit-chain verification endpoint.
+
+## One-Command Demo (No External Signups)
+```bash
+make demo
+```
+
+This starts:
+- API at `http://localhost:8000`
+- Frontend at `http://localhost:5173`
+- Local Postgres, Redis, Kafka (Redpanda), Neo4j
+- Automatic synthetic event seeding via `scripts/simulate.py`
+
+Stop demo:
+```bash
+make demo-down
+```
+
+## Hosted Demo (Free Tier)
+- Public URL: `https://juy595711--trade-surveillance-ai-fastapi-app.modal.run`
+- Health: `GET /health`
+- Notes: demo runs with `DEMO_MODE=true` and `REQUIRE_API_KEY=false` for frictionless evaluation.
+
+## Demo Preview
+![Dashboard demo](assets/dashboard-demo.gif)
+
+## API Quickstart (Tenant + API Key Flow)
+1. Register:
+```bash
+curl -sX POST http://localhost:8000/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"eval@example.com","password":"EvalPass!12345"}'
+```
+
+2. Get JWT:
+```bash
+TOKEN=$(curl -sX POST http://localhost:8000/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"email":"eval@example.com","password":"EvalPass!12345"}' | jq -r '.access_token')
+```
+
+3. Create API key:
+```bash
+API_KEY=$(curl -sX POST http://localhost:8000/auth/api-keys \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"institution-a"}' | jq -r '.api_key')
+```
+
+4. Ingest an event:
+```bash
+curl -sX POST http://localhost:8000/events \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $API_KEY" \
+  -d '{
+    "event_id":"evt-1",
+    "ts":"2026-02-25T12:00:00Z",
+    "venue":"SIM",
+    "asset_class":"equity",
+    "symbol":"AAPL",
+    "account_id":"acct-1",
+    "side":"BUY",
+    "event_type":"new_order",
+    "order_id":"ord-1",
+    "quantity":100,
+    "price":190,
+    "order_type":"LIMIT",
+    "metadata":{}
+  }'
+```
+
+5. Fetch alerts:
+```bash
+curl -s http://localhost:8000/alerts -H "x-api-key: $API_KEY"
+```
+
+## Core Endpoints
+- `POST /auth/register`
+- `POST /auth/token`
+- `POST /auth/api-keys`
+- `GET /auth/api-keys`
 - `POST /events`
 - `GET /alerts`
 - `GET /alerts/{alert_id}/priority`
@@ -25,61 +100,33 @@ Enterprise-grade, GitHub-first implementation of a hybrid surveillance stack for
 - `GET /reports/sar/{case_id}`
 - `GET /reports/mar/{case_id}`
 - `GET /audit/verify`
-- `POST /graphql` (optional, enabled when `strawberry-graphql` is installed)
 - `GET /health`
 - `GET /metrics`
 - `WS /ws/alerts`
 
-## Quick Start
+## Postman
+Import:
+- `postman/trade-surveillance-ai.postman_collection.json`
 
-1. Configure environment:
+## Legal
+- License: `LICENSE`
+- Evaluation terms: `TERMS.md`
+
+## Development
 ```bash
-cp .env.example .env
-```
-
-2. Start stack:
-```bash
-docker compose up --build
-```
-
-Frontend dashboard runs at `http://localhost:5173`.
-
-3. Verify:
-```bash
-curl http://localhost:8000/health
-```
-
-4. Run tests:
-```bash
-python3 -m pytest
-```
-
-## Core Operations
-
-```bash
+make install
 make test
 make lint
 make backtest
-make drift
-make retrain
+make load
 ```
 
-## Deployment
-- Kubernetes manifests: `k8s/base/`
-- GitHub workflows:
-  - `.github/workflows/ci.yml`
-  - `.github/workflows/docker-publish.yml`
-  - `.github/workflows/retrain.yml`
-  - `.github/workflows/drift-monitor.yml`
-  - `.github/workflows/load-test.yml`
+## Environment
+Use `.env.example` as template.  
+For local demo mode:
+- `DEMO_MODE=true`
+- `REQUIRE_API_KEY=false`
 
-## Free-Tier Friendly Infrastructure
-- Aiven PostgreSQL free
-- Aiven Valkey free
-- Aiven Kafka free
-- Neo4j Aura Free
-
-Runtime is designed to be stateless with remote backing services only.
-
-## Status
-Detailed phase-by-phase completion is tracked in `docs/CHECKLIST_STATUS.md`.
+For institutional evaluation mode:
+- `DEMO_MODE=false`
+- `REQUIRE_API_KEY=true`

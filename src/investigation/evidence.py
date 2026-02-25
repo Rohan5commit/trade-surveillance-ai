@@ -1,17 +1,27 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from src.common.schemas import Alert, MarketEvent
 
 
+def _as_utc(ts: datetime) -> datetime:
+    if ts.tzinfo is None:
+        return ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone(timezone.utc)
+
+
 def collect_related_trades(events: list[MarketEvent], account_id: str, symbol: str, pivot_ts: datetime, days: int = 3) -> list[MarketEvent]:
-    start = pivot_ts - timedelta(days=days)
-    end = pivot_ts + timedelta(days=days)
+    pivot = _as_utc(pivot_ts)
+    start = pivot - timedelta(days=days)
+    end = pivot + timedelta(days=days)
     return [
         e
         for e in events
-        if e.account_id == account_id and e.symbol == symbol and start <= e.ts <= end and e.event_type in {"trade", "fill"}
+        if e.account_id == account_id
+        and e.symbol == symbol
+        and start <= _as_utc(e.ts) <= end
+        and e.event_type in {"trade", "fill"}
     ]
 
 

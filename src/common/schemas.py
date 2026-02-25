@@ -34,6 +34,7 @@ class Alert(BaseModel):
     ts: datetime
     detector: str
     pattern: str
+    tenant_id: str | None = None
     account_id: str
     symbol: str
     severity: Literal["critical", "high", "medium", "low"]
@@ -62,6 +63,7 @@ class CaseCreateRequest(BaseModel):
 
 class CaseResponse(BaseModel):
     id: int
+    tenant_id: str
     alert_id: str
     account_id: str
     symbol: str
@@ -69,3 +71,35 @@ class CaseResponse(BaseModel):
     severity: str
     summary: str
     created_at: datetime
+
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+
+
+class RegisterResponse(BaseModel):
+    user_id: int
+    tenant_id: str
+    email: str
+
+
+class TokenRequest(BaseModel):
+    email: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class ApiKeyCreateRequest(BaseModel):
+    name: str = "default"
+
+
+class ApiKeyResponse(BaseModel):
+    key_id: int
+    name: str
+    key_prefix: str
+    api_key: str | None = None

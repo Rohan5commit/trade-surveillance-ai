@@ -13,7 +13,8 @@ class AlertService:
 
     def _dedup_key(self, alert: Alert) -> str:
         d = alert.ts.date().isoformat()
-        return f"{alert.pattern}:{alert.account_id}:{alert.symbol}:{d}"
+        tenant = alert.tenant_id or "public"
+        return f"{tenant}:{alert.pattern}:{alert.account_id}:{alert.symbol}:{d}"
 
     def ingest(self, alerts: list[Alert]) -> list[Alert]:
         accepted: list[Alert] = []
@@ -29,6 +30,15 @@ class AlertService:
 
     def list_alerts(self, limit: int = 100) -> list[Alert]:
         return list(self.alerts)[:limit]
+
+    def list_alerts_for_tenant(self, tenant_id: str, limit: int = 100) -> list[Alert]:
+        out: list[Alert] = []
+        for alert in self.alerts:
+            if alert.tenant_id == tenant_id:
+                out.append(alert)
+            if len(out) >= limit:
+                break
+        return out
 
     def _cleanup_old_keys(self, _today: date) -> None:
         # Keep dedup simple for MVP. A production system should use Redis TTL.

@@ -1,0 +1,64 @@
+{
+  "generated_at_utc": "2026-02-25T04:18:49Z",
+  "tool": "locust",
+  "host": "http://127.0.0.1:8000",
+  "scenarios": [
+    {
+      "name": "s1",
+      "users": 50,
+      "duration": "1m",
+      "requests": 21218,
+      "failures": 0,
+      "rps": 359.4374039008532,
+      "p50_ms": 99.0,
+      "p95_ms": 210.0,
+      "p99_ms": 250.0,
+      "avg_ms": 103.77570897780161,
+      "max_ms": 394.9756670000042
+    },
+    {
+      "name": "s2",
+      "users": 150,
+      "duration": "1m",
+      "requests": 13280,
+      "failures": 0,
+      "rps": 224.49236061425196,
+      "p50_ms": 450.0,
+      "p95_ms": 1100.0,
+      "p99_ms": 1300.0,
+      "avg_ms": 596.2138805621256,
+      "max_ms": 1670.7647079999992
+    },
+    {
+      "name": "s3",
+      "users": 300,
+      "duration": "1m",
+      "requests": 10348,
+      "failures": 0,
+      "rps": 171.8176888431743,
+      "p50_ms": 1100.0,
+      "p95_ms": 3100.0,
+      "p99_ms": 3300.0,
+      "avg_ms": 1550.7299955957687,
+      "max_ms": 3494.823374999996
+    },
+    {
+      "name": "soak",
+      "users": 150,
+      "duration": "2m",
+      "requests": 17405,
+      "failures": 0,
+      "rps": 144.5956085603045,
+      "p50_ms": 770.0,
+      "p95_ms": 1600.0,
+      "p99_ms": 1800.0,
+      "avg_ms": 972.2124352841633,
+      "max_ms": 2944.805459
+    }
+  ],
+  "aggregate": {
+    "total_requests": 62251,
+    "total_failures": 0,
+    "error_rate_percent": 0.0
+  }
+}

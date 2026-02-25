@@ -5,39 +5,73 @@ from datetime import datetime, timezone
 import uuid
 
 import numpy as np
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
 from prometheus_client import Counter, Histogram, generate_latest
 from starlette.responses import PlainTextResponse
 
 from src.alerting.service import AlertService
 from src.api.graphql_schema import build_graphql_router
-from src.common.schemas import Alert, CaseCreateRequest, CaseResponse, IngestResponse, MarketEvent
+from src.common.schemas import (
+    Alert,
+    ApiKeyCreateRequest,
+    ApiKeyResponse,
+    CaseCreateRequest,
+    CaseResponse,
+    IngestResponse,
+    MarketEvent,
+    RegisterRequest,
+    RegisterResponse,
+    TokenRequest,
+    TokenResponse,
+)
 from src.config.settings import settings
 from src.detection.hybrid.scorer import combine_scores
 from src.detection.ml.features import extract_session_features
 from src.detection.ml.models import UnsupervisedEnsemble
 from src.detection.rules.engine import RuleEngine
+from src.investigation.case_manager import CaseManager
 from src.investigation.evidence import collect_related_trades, link_prior_alerts, summarize_evidence
 from src.investigation.queue import prioritize_alert
-from src.investigation.case_manager import CaseManager
 from src.preprocessing.normalizer import normalize_event
 from src.reporting.audit import AuditTrail
 from src.reporting.mar import MarPayload, render_mar_xml
 from src.reporting.sar import SarPayload, render_sar_markdown
+from src.security.auth import ApiKeyIdentity, AuthManager, AuthUser
 
-app = FastAPI(title="Intelligent Trade Surveillance API", version="0.1.0")
+
+app = FastAPI(title="Intelligent Trade Surveillance API", version="0.2.0-beta")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 EVENTS_INGESTED = Counter("events_ingested_total", "Total events ingested")
 ALERTS_GENERATED = Counter("alerts_generated_total", "Total alerts generated")
 INGEST_LATENCY = Histogram("ingest_latency_seconds", "Latency for ingest endpoint")
 
+
+def _db_url() -> str:
+    if settings.demo_mode:
+        return "sqlite+pysqlite:///./demo.db"
+    if settings.postgres_url:
+        return settings.postgres_url
+    return "sqlite+pysqlite:///:memory:"
+
+
 rule_engine = RuleEngine()
 alert_service = AlertService()
 ml_ensemble = UnsupervisedEnsemble(contamination=0.01)
-case_manager = CaseManager(settings.postgres_url or "sqlite+pysqlite:///:memory:")
+case_manager = CaseManager(_db_url())
+auth_manager = AuthManager(_db_url(), settings.jwt_secret)
 case_manager.init_schema()
+auth_manager.init_schema()
 audit_trail = AuditTrail()
 
 recent_events_by_account: dict[str, deque[MarketEvent]] = defaultdict(lambda: deque(maxlen=500))
@@ -46,21 +80,24 @@ all_events: deque[MarketEvent] = deque(maxlen=200_000)
 
 class ConnectionManager:
     def __init__(self) -> None:
-        self.connections: set[WebSocket] = set()
+        self.connections: dict[WebSocket, str] = {}
 
-    async def connect(self, websocket: WebSocket) -> None:
+    async def connect(self, websocket: WebSocket, tenant_id: str) -> None:
         await websocket.accept()
-        self.connections.add(websocket)
+        self.connections[websocket] = tenant_id
 
     def disconnect(self, websocket: WebSocket) -> None:
-        self.connections.discard(websocket)
+        self.connections.pop(websocket, None)
 
     async def broadcast_alerts(self, alerts: list[Alert]) -> None:
         if not self.connections or not alerts:
             return
-        payload = [a.model_dump(mode="json") for a in alerts]
+
         stale: list[WebSocket] = []
-        for ws in self.connections:
+        for ws, tenant_id in list(self.connections.items()):
+            payload = [a.model_dump(mode="json") for a in alerts if a.tenant_id == tenant_id]
+            if not payload:
+                continue
             try:
                 await ws.send_json({"type": "alerts", "data": payload})
             except Exception:
@@ -70,14 +107,42 @@ class ConnectionManager:
 
 
 ws_manager = ConnectionManager()
+bearer_scheme = HTTPBearer(auto_error=False)
+
+# GraphQL is disabled when API-key isolation is required.
 graphql_router = build_graphql_router(alert_service, case_manager)
-if graphql_router is not None:
+if graphql_router is not None and not settings.require_api_key:
     app.include_router(graphql_router, prefix="/graphql")
+
+
+def _auth_unauthorized(detail: str = "unauthorized") -> None:
+    raise HTTPException(status_code=401, detail=detail)
+
+
+def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)) -> AuthUser:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        _auth_unauthorized("missing bearer token")
+    try:
+        return auth_manager.parse_token(credentials.credentials)
+    except Exception:
+        _auth_unauthorized("invalid token")
+
+
+def require_api_key(x_api_key: str | None = Header(default=None, alias="x-api-key")) -> ApiKeyIdentity:
+    if settings.demo_mode and not settings.require_api_key:
+        return ApiKeyIdentity(key_id=0, tenant_id="demo-tenant", user_id=0, name="demo", key_prefix="demo")
+
+    if not x_api_key:
+        _auth_unauthorized("missing x-api-key")
+    identity = auth_manager.verify_api_key(x_api_key)
+    if identity is None:
+        _auth_unauthorized("invalid api key")
+    return identity
 
 
 @app.on_event("startup")
 async def startup() -> None:
-    logger.info("API starting in {env} mode", env=settings.environment)
+    logger.info("API starting in {env} mode (demo_mode={demo})", env=settings.environment, demo=settings.demo_mode)
 
 
 @app.get("/health")
@@ -90,8 +155,45 @@ def metrics() -> PlainTextResponse:
     return PlainTextResponse(generate_latest().decode("utf-8"), media_type="text/plain")
 
 
+@app.post("/auth/register", response_model=RegisterResponse)
+def register(payload: RegisterRequest) -> RegisterResponse:
+    try:
+        user = auth_manager.register_user(payload.email, payload.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return RegisterResponse(user_id=user.user_id, tenant_id=user.tenant_id, email=user.email)
+
+
+@app.post("/auth/token", response_model=TokenResponse)
+def token(payload: TokenRequest) -> TokenResponse:
+    user = auth_manager.authenticate(payload.email, payload.password)
+    if user is None:
+        raise HTTPException(status_code=401, detail="invalid credentials")
+    return TokenResponse(access_token=auth_manager.issue_token(user))
+
+
+@app.post("/auth/api-keys", response_model=ApiKeyResponse)
+def create_api_key(payload: ApiKeyCreateRequest, current_user: AuthUser = Depends(get_current_user)) -> ApiKeyResponse:
+    identity, raw_key = auth_manager.create_api_key(current_user, name=payload.name)
+    return ApiKeyResponse(
+        key_id=identity.key_id,
+        name=identity.name,
+        key_prefix=identity.key_prefix,
+        api_key=raw_key,
+    )
+
+
+@app.get("/auth/api-keys", response_model=list[ApiKeyResponse])
+def list_api_keys(current_user: AuthUser = Depends(get_current_user)) -> list[ApiKeyResponse]:
+    keys = auth_manager.list_api_keys(current_user)
+    return [
+        ApiKeyResponse(key_id=k.key_id, name=k.name, key_prefix=k.key_prefix, api_key=None)
+        for k in keys
+    ]
+
+
 @app.post("/events", response_model=IngestResponse)
-async def ingest_event(event: MarketEvent) -> IngestResponse:
+async def ingest_event(event: MarketEvent, identity: ApiKeyIdentity = Depends(require_api_key)) -> IngestResponse:
     with INGEST_LATENCY.time():
         normalized = normalize_event(event)
         EVENTS_INGESTED.inc()
@@ -99,7 +201,7 @@ async def ingest_event(event: MarketEvent) -> IngestResponse:
 
         recent_events_by_account[normalized.account_id].append(normalized)
 
-        rule_alerts = rule_engine.process(normalized)
+        rule_alerts = [a.model_copy(update={"tenant_id": identity.tenant_id}) for a in rule_engine.process(normalized)]
 
         ml_alerts: list[Alert] = []
         recent = list(recent_events_by_account[normalized.account_id])
@@ -107,7 +209,6 @@ async def ingest_event(event: MarketEvent) -> IngestResponse:
             try:
                 features = extract_session_features(recent).vector.reshape(1, -1)
                 if not ml_ensemble.fitted:
-                    # Bootstrap with a rolling baseline from current account.
                     baseline = np.repeat(features, 30, axis=0)
                     baseline += np.random.normal(0, 0.01, baseline.shape)
                     ml_ensemble.fit(baseline)
@@ -125,6 +226,7 @@ async def ingest_event(event: MarketEvent) -> IngestResponse:
                             ts=normalized.ts,
                             detector="hybrid",
                             pattern="anomalous_behavior",
+                            tenant_id=identity.tenant_id,
                             account_id=normalized.account_id,
                             symbol=normalized.symbol,
                             severity=hybrid.severity,
@@ -144,7 +246,12 @@ async def ingest_event(event: MarketEvent) -> IngestResponse:
                 audit_trail.append(
                     actor="surveillance-engine",
                     action="alert_generated",
-                    payload={"alert_id": alert.alert_id, "pattern": alert.pattern, "score": alert.score},
+                    payload={
+                        "tenant_id": identity.tenant_id,
+                        "alert_id": alert.alert_id,
+                        "pattern": alert.pattern,
+                        "score": alert.score,
+                    },
                 )
 
         return IngestResponse(
@@ -155,13 +262,27 @@ async def ingest_event(event: MarketEvent) -> IngestResponse:
 
 
 @app.get("/alerts", response_model=list[Alert])
-def list_alerts(limit: int = 100) -> list[Alert]:
-    return alert_service.list_alerts(limit=limit)
+def list_alerts(limit: int = 100, identity: ApiKeyIdentity = Depends(require_api_key)) -> list[Alert]:
+    return alert_service.list_alerts_for_tenant(identity.tenant_id, limit=limit)
 
 
 @app.websocket("/ws/alerts")
 async def alerts_websocket(websocket: WebSocket) -> None:
-    await ws_manager.connect(websocket)
+    api_key = websocket.query_params.get("api_key")
+    if settings.require_api_key and not api_key:
+        await websocket.close(code=4401)
+        return
+
+    if settings.require_api_key:
+        identity = auth_manager.verify_api_key(api_key or "")
+        if identity is None:
+            await websocket.close(code=4401)
+            return
+        tenant_id = identity.tenant_id
+    else:
+        tenant_id = "demo-tenant"
+
+    await ws_manager.connect(websocket, tenant_id)
     try:
         while True:
             await websocket.receive_text()
@@ -172,6 +293,7 @@ async def alerts_websocket(websocket: WebSocket) -> None:
 def _case_response(case_obj) -> CaseResponse:
     return CaseResponse(
         id=case_obj.id,
+        tenant_id=case_obj.tenant_id,
         alert_id=case_obj.alert_id,
         account_id=case_obj.account_id,
         symbol=case_obj.symbol,
@@ -183,8 +305,9 @@ def _case_response(case_obj) -> CaseResponse:
 
 
 @app.post("/cases", response_model=CaseResponse)
-def create_case(payload: CaseCreateRequest) -> CaseResponse:
+def create_case(payload: CaseCreateRequest, identity: ApiKeyIdentity = Depends(require_api_key)) -> CaseResponse:
     case = case_manager.create_case(
+        tenant_id=identity.tenant_id,
         alert_id=payload.alert_id,
         account_id=payload.account_id,
         symbol=payload.symbol,
@@ -194,20 +317,24 @@ def create_case(payload: CaseCreateRequest) -> CaseResponse:
     audit_trail.append(
         actor="investigator-api",
         action="case_created",
-        payload={"case_id": case.id, "alert_id": case.alert_id, "severity": case.severity},
+        payload={
+            "tenant_id": identity.tenant_id,
+            "case_id": case.id,
+            "alert_id": case.alert_id,
+            "severity": case.severity,
+        },
     )
     return _case_response(case)
 
 
 @app.get("/cases", response_model=list[CaseResponse])
-def list_cases(limit: int = 100) -> list[CaseResponse]:
-    return [_case_response(c) for c in case_manager.list_cases(limit=limit)]
+def list_cases(limit: int = 100, identity: ApiKeyIdentity = Depends(require_api_key)) -> list[CaseResponse]:
+    return [_case_response(c) for c in case_manager.list_cases(tenant_id=identity.tenant_id, limit=limit)]
 
 
 @app.get("/reports/sar/{case_id}")
-def generate_sar(case_id: int) -> PlainTextResponse:
-    cases = {c.id: c for c in case_manager.list_cases(limit=1000)}
-    case = cases.get(case_id)
+def generate_sar(case_id: int, identity: ApiKeyIdentity = Depends(require_api_key)) -> PlainTextResponse:
+    case = case_manager.get_case(identity.tenant_id, case_id)
     if not case:
         raise HTTPException(status_code=404, detail="case not found")
 
@@ -226,9 +353,8 @@ def generate_sar(case_id: int) -> PlainTextResponse:
 
 
 @app.get("/reports/mar/{case_id}")
-def generate_mar(case_id: int) -> PlainTextResponse:
-    cases = {c.id: c for c in case_manager.list_cases(limit=1000)}
-    case = cases.get(case_id)
+def generate_mar(case_id: int, identity: ApiKeyIdentity = Depends(require_api_key)) -> PlainTextResponse:
+    case = case_manager.get_case(identity.tenant_id, case_id)
     if not case:
         raise HTTPException(status_code=404, detail="case not found")
 
@@ -246,21 +372,21 @@ def generate_mar(case_id: int) -> PlainTextResponse:
 
 
 @app.get("/cases/{case_id}/evidence")
-def case_evidence(case_id: int) -> JSONResponse:
-    cases = {c.id: c for c in case_manager.list_cases(limit=1000)}
-    case = cases.get(case_id)
+def case_evidence(case_id: int, identity: ApiKeyIdentity = Depends(require_api_key)) -> JSONResponse:
+    case = case_manager.get_case(identity.tenant_id, case_id)
     if not case:
         raise HTTPException(status_code=404, detail="case not found")
 
     pivot_ts = case.created_at
     events = collect_related_trades(list(all_events), case.account_id, case.symbol, pivot_ts, days=3)
-    prior = link_prior_alerts(alert_service.list_alerts(limit=5000), case.account_id, case.symbol)
+    prior = link_prior_alerts(alert_service.list_alerts_for_tenant(identity.tenant_id, limit=5000), case.account_id, case.symbol)
     summary = summarize_evidence(
         Alert(
             alert_id=case.alert_id,
             ts=case.created_at,
             detector="case",
             pattern="case",
+            tenant_id=identity.tenant_id,
             account_id=case.account_id,
             symbol=case.symbol,
             severity=case.severity,
@@ -275,8 +401,8 @@ def case_evidence(case_id: int) -> JSONResponse:
 
 
 @app.get("/alerts/{alert_id}/priority")
-def alert_priority(alert_id: str) -> JSONResponse:
-    alerts = {a.alert_id: a for a in alert_service.list_alerts(limit=5000)}
+def alert_priority(alert_id: str, identity: ApiKeyIdentity = Depends(require_api_key)) -> JSONResponse:
+    alerts = {a.alert_id: a for a in alert_service.list_alerts_for_tenant(identity.tenant_id, limit=5000)}
     alert = alerts.get(alert_id)
     if not alert:
         raise HTTPException(status_code=404, detail="alert not found")

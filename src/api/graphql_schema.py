@@ -36,9 +36,9 @@ def build_graphql_router(alert_service: Any, case_manager: Any):
     @strawberry.type
     class Query:
         @strawberry.field
-        def alerts(self, limit: int = 50) -> list[AlertType]:
+        def alerts(self, tenant_id: str, limit: int = 50) -> list[AlertType]:
             out = []
-            for a in alert_service.list_alerts(limit=limit):
+            for a in alert_service.list_alerts_for_tenant(tenant_id=tenant_id, limit=limit):
                 out.append(
                     AlertType(
                         alert_id=a.alert_id,
@@ -52,9 +52,9 @@ def build_graphql_router(alert_service: Any, case_manager: Any):
             return out
 
         @strawberry.field
-        def cases(self, limit: int = 50) -> list[CaseType]:
+        def cases(self, tenant_id: str, limit: int = 50) -> list[CaseType]:
             out = []
-            for c in case_manager.list_cases(limit=limit):
+            for c in case_manager.list_cases(tenant_id=tenant_id, limit=limit):
                 out.append(
                     CaseType(
                         id=c.id,

@@ -19,3 +19,4 @@ dist/
 config/certs/
 frontend/node_modules/
 frontend/dist/
+demo.db
