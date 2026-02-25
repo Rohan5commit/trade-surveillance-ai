@@ -4,7 +4,11 @@ import modal
 
 
 app = modal.App("trade-surveillance-ai")
-image = modal.Image.debian_slim().pip_install_from_requirements("requirements.txt")
+image = (
+    modal.Image.debian_slim(python_version="3.11")
+    .pip_install_from_requirements("requirements.txt")
+    .add_local_python_source("src")
+)
 
 
 @app.function(image=image, scaledown_window=60)
